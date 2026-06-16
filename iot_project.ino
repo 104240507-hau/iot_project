@@ -1,39 +1,17 @@
 #include "DHT.h"
-#include <ESP32Servo.h>
+#include <ESP32Servo.h> 
 #include <Fuzzy.h>
 
-
-
-
-
-#define DHTPIN 4     // Digital pin connected to the DHT sensor
-// Feather HUZZAH ESP8266 note: use pins 3, 4, 5, 12, 13 or 14 --
-// Pin 15 can work but DHT must be disconnected during program upload.
-
-// Uncomment whatever type you're using!
-#define DHTTYPE DHT11   // DHT 11
-//#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
-//#define DHTTYPE DHT21   // DHT 21 (AM2301)
-
-// Connect pin 1 (on the left) of the sensor to +5V
-// NOTE: If using a board with 3.3V logic like an Arduino Due connect pin 1
-// to 3.3V instead of 5V!
-// Connect pin 2 of the sensor to whatever your DHTPIN is
-// Connect pin 4 (on the right) of the sensor to GROUND
-// Connect a 10K resistor from pin 2 (data) to pin 1 (power) of the sensor
-
-// Initialize DHT sensor.
-// Note that older versions of this library took an optional third parameter to
-// tweak the timings for faster processors.  This parameter is no longer needed
-// as the current DHT reading algorithm adjusts itself to work on faster procs.
+#define DHTPIN 4       
+#define DHTTYPE DHT11  
 DHT dht(DHTPIN, DHTTYPE);
 
-static const int servoPin = 13;
+static const int servoPin = 5; 
 Servo servo1;
 
 Fuzzy *fuzzy = new Fuzzy();
+
 void setupFuzzy() {
-  // Khai báo biến đầu vào: Nhiệt độ (Temp)
   FuzzyInput *temp = new FuzzyInput(1);
   FuzzySet *cool = new FuzzySet(0, 0, 20, 25);
   FuzzySet *warm = new FuzzySet(22, 26, 28, 32);
@@ -41,78 +19,77 @@ void setupFuzzy() {
   temp->addFuzzySet(cool); temp->addFuzzySet(warm); temp->addFuzzySet(hot);
   fuzzy->addFuzzyInput(temp);
 
-  // Khai báo biến đầu ra: Thời gian phun (Duration)
-  FuzzyOutput *duration = new FuzzyOutput(1);
-  FuzzySet *short_mist = new FuzzySet(0, 0, 30, 60);     // 0 - 1 phút
-  FuzzySet *medium_mist = new FuzzySet(45, 90, 120, 150); // 1.5 - 2.5 phút
-  FuzzySet *long_mist = new FuzzySet(120, 180, 300, 300); // 3 - 5 phút
-  duration->addFuzzySet(short_mist); duration->addFuzzySet(medium_mist); duration->addFuzzySet(long_mist);
+
+  FuzzyOutput *duration = new FuzzyOutput(2);
+  FuzzySet *short_m = new FuzzySet(5, 10, 20, 30);      // Thực tế: Phun ngắn từ 5 - 30 giây
+  FuzzySet *medium_m = new FuzzySet(25, 40, 60, 90);    // Phun vừa từ 25 - 90 giây
+  FuzzySet *long_m = new FuzzySet(80, 120, 180, 180);   // Phun dài từ 80 - 180 giây (3 phút)
+  duration->addFuzzySet(short_m); duration->addFuzzySet(medium_m); duration->addFuzzySet(long_m);
   fuzzy->addFuzzyOutput(duration);
 
-  // Định nghĩa Luật mờ (Rules)
-  // RULE 1: Nếu Temp là HOT -> Phun LONG
-  FuzzyRuleAntagonist *ifTempHot = new FuzzyRuleAntagonist(); 
-  ifTempHot->withFuzzySet(hot);
+ 
+  FuzzyRuleAntecedent *ifTempHot = new FuzzyRuleAntecedent(); 
+  ifTempHot->joinSingle(hot); 
   FuzzyRuleConsequent *thenLongMist = new FuzzyRuleConsequent(); 
-  thenLongMist->withFuzzySet(long_mist);
+  thenLongMist->addOutput(long_m); 
   FuzzyRule *fuzzyRule1 = new FuzzyRule(1, ifTempHot, thenLongMist);
   fuzzy->addFuzzyRule(fuzzyRule1);
 }
 
 void setup() {
   Serial.begin(115200);
-  Serial.println(F("DHTxx test!"));
-  servo1.attach(servoPin);
-
-  dht.begin();
+  Serial.println(F("He thong DHT11 + Chuan chan 4 dang khoi dong..."));
+  
+  // Cấu hình Servo thực tế
+  ESP32PWM::allocateTimer(0); 
+  servo1.setPeriodHertz(50);  
+  servo1.attach(servoPin, 500, 2400); 
+  
+  servo1.write(0); 5
+  
+  dht.begin();    
+  setupFuzzy();   
 }
 
 void loop() {
-  // Wait a few seconds between measurements.
-  delay(2000);
+  delay(2000); // Chờ 2 giây đọc cảm biến
 
-  // Reading temperature or humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
   float h = dht.readHumidity();
-  bool State = false;
-  // Read temperature as Celsius (the default)
   float t = dht.readTemperature();
-  // Read temperature as Fahrenheit (isFahrenheit = true)
-  float f = dht.readTemperature(true);
 
-  // Check if any reads failed and exit early (to try again).
-  if (isnan(h) || isnan(t) || isnan(f)) {
-    Serial.println(F("Failed to read from DHT sensor!"));
-    return;
+  if (isnan(h) || isnan(t)) {
+    Serial.println(F("Loi phan cung: Khong doc duoc DHT22! Kiem tra lai day nguon/tin hieu."));
+    return; 
   }
 
-  if(h >=50){
-    State = true;
+  Serial.print(F("Do am: ")); Serial.print(h);
+  Serial.print(F("% | Nhiet do: ")); Serial.print(t); Serial.println(F("°C"));
+
+  fuzzy->setInput(1, t); 
+  fuzzy->fuzzify();      
+  float output_duration = fuzzy->defuzzify(2); 
+
+
+  if (output_duration < 5.0) {
+    output_duration = 5.0; 
   }
-  if (State == true){
-    for(int posDegrees = 0; posDegrees <= 180; posDegrees++) {
-    servo1.write(posDegrees);
-    Serial.println(posDegrees);
-    delay(2000);
-   }
+  
+  Serial.print(F("-> Thoi gian phun thuc te: ")); Serial.print(output_duration); Serial.println(F(" giay."));
 
-  for(int posDegrees = 180; posDegrees >= 0; posDegrees--) {
-    servo1.write(posDegrees);
-    Serial.println(posDegrees);
-    delay(2000);
-    }
+
+  if (h < 60.0) { 
+    Serial.println(F("--> Mo van phun suong..."));
+    servo1.write(90); 
+    
+    delay(output_duration * 1000); 
+    
+    servo1.write(0);  
+    Serial.println(F("--> Dong van."));
+    
+  
+    delay(5000); 
+  } else {
+    Serial.println(F("--> Du am. Dong van."));
+    servo1.write(0);
   }
-
-  // Compute heat index in Fahrenheit (the default)
-  float hif = dht.computeHeatIndex(f, h);
-  // Compute heat index in Celsius (isFahreheit = false)
-  float hic = dht.computeHeatIndex(t, h, false);
-
-  Serial.print(F("Humidity: "));
-  Serial.print(h);
-  Serial.print(F("%  Temperature: "));
-  Serial.print(t);
-  Serial.print(F("°C "));
-  Serial.print(f);
-  Serial.println();
 }
