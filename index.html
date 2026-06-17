@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arduino Serial Monitor Online</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #ffffff;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        button {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #005999;
+        }
+        #terminal {
+            background-color: #000000;
+            color: #00ff00;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 15px;
+            height: 400px;
+            overflow-y: scroll;
+            border-radius: 5px;
+            border: 1px solid #333;
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+        .status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Arduino Serial Monitor (Web Frontend)</h2>
+    <button id="connectBtn">Kết nối Arduino</button>
+    <div class="status" id="statusText">Trạng thái: Chưa kết nối</div>
+    
+    <div id="terminal">--- Chờ kết nối dữ liệu ---&#10;</div>
+</div>
+
+<script>
+    const connectBtn = document.getElementById('connectBtn');
+    const terminal = document.getElementById('terminal');
+    const statusText = document.getElementById('statusText');
+
+    let port;
+    let reader;
+
+    connectBtn.addEventListener('click', async () => {
+        // Kiểm tra xem trình duyệt có hỗ trợ Web Serial API không
+        if ('serial' in navigator) {
+            try {
+                // 1. Yêu cầu người dùng chọn cổng COM của Arduino
+                port = await navigator.serial.requestPort();
+                
+                // 2. Mở cổng với Baud rate trùng với Arduino (9600)
+                await port.open({ baudRate: 115200 });
+                
+                statusText.innerText = "Trạng thái: Đã kết nối!";
+                statusText.style.color = "#00ff00";
+                terminal.innerHTML = ""; // Xóa màn hình chờ
+
+                // 3. Đọc luồng dữ liệu (Stream)
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                reader = textDecoder.readable.getReader();
+
+                // Vòng lặp liên tục lắng nghe dữ liệu từ Arduino
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        // Thao tác đọc đã bị hủy
+                        break;
+                    }
+                    if (value) {
+                        // Hiển thị dữ liệu lên Terminal giao diện
+                        terminal.innerText += value;
+                        // Tự động cuộn xuống đáy khi có dữ liệu mới
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                }
+
+            } catch (error) {
+                console.error("Lỗi:", error);
+                statusText.innerText = "Trạng thái: Lỗi kết nối hoặc người dùng hủy.";
+                statusText.style.color = "#ff3333";
+            }
+        } else {
+            alert("Trình duyệt của bạn không hỗ trợ Web Serial API. Hãy thử lại trên Google Chrome hoặc Edge nhé!");
+        }
+    });
+</script>
+
+</body>
+</html>
